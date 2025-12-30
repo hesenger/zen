@@ -1,0 +1,36 @@
+# Go
+backend/app
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+
+# Frontend
+frontend/node_modules
+frontend/dist
+backend/frontend/dist/*
+!backend/frontend/dist/embedable-file.txt
+
+# Logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# Environment
+.env
+.env.local
+.env.production
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db

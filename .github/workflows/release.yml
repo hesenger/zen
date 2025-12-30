@@ -1,0 +1,45 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'pnpm'
+          cache-dependency-path: frontend/pnpm-lock.yaml
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.25'
+
+      - name: Install frontend dependencies
+        run: cd frontend && pnpm install
+
+      - name: Build frontend
+        run: cd frontend && pnpm run build
+
+      - name: Build backend
+        run: cd backend && GOOS=linux GOARCH=amd64 go build -o app
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: backend/app
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
