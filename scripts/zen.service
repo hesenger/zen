@@ -6,7 +6,7 @@ After=network.target
 Type=simple
 User=root
 WorkingDirectory=/opt/zen
-ExecStart=/opt/zen/app
+ExecStart=/opt/zen/zen
 Restart=always
 RestartSec=5
 
