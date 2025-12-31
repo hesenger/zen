@@ -2,7 +2,7 @@
 set -e
 
 REPO="hesenger/zen"
-BINARY_NAME="app"
+BINARY_NAME="zen"
 INSTALL_DIR="/opt/zen"
 SERVICE_NAME="zen"
 
@@ -31,7 +31,7 @@ echo "Installing to $INSTALL_DIR..."
 mv "/tmp/$BINARY_NAME" "$INSTALL_DIR/$BINARY_NAME"
 
 echo "Downloading systemd service file..."
-curl -L -o "/tmp/$SERVICE_NAME.service" "https://raw.githubusercontent.com/$REPO/main/scripts/app.service"
+curl -L -o "/tmp/$SERVICE_NAME.service" "https://raw.githubusercontent.com/$REPO/main/scripts/zen.service"
 
 echo "Installing systemd service..."
 mv "/tmp/$SERVICE_NAME.service" "/etc/systemd/system/$SERVICE_NAME.service"

@@ -40,7 +40,7 @@ jobs:
         run: cd frontend && pnpm run build
 
       - name: Build backend
-        run: cd backend && GOOS=linux GOARCH=amd64 go build -o app
+        run: cd backend && GOOS=linux GOARCH=amd64 go build -o zen
 
       - name: Create Release
         env:
@@ -48,8 +48,8 @@ jobs:
           TAG: ${{ github.ref_name }}
         run: |
           gh release create "$TAG" \
-            backend/app \
-            scripts/app.service \
+            backend/zen \
+            scripts/zen.service \
             --repo=${{ github.repository }} \
             --title="Release $TAG" \
             --generate-notes
