@@ -3,6 +3,7 @@ import { createContext, useContext, useState, type ReactNode } from "react";
 interface SetupData {
   username: string;
   password: string;
+  githubToken: string;
 }
 
 interface SetupContextType {
@@ -16,6 +17,7 @@ export function SetupProvider({ children }: { children: ReactNode }) {
   const [setupData, setSetupData] = useState<SetupData>({
     username: "",
     password: "",
+    githubToken: "",
   });
 
   const updateSetupData = (data: Partial<SetupData>) => {
