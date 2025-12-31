@@ -1,5 +1,5 @@
 [Unit]
-Description=Zen Application
+Description=Zen In-place Deployments
 After=network.target
 
 [Service]

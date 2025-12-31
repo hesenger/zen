@@ -30,11 +30,6 @@ chmod +x "/tmp/$BINARY_NAME"
 echo "Installing to $INSTALL_DIR..."
 mv "/tmp/$BINARY_NAME" "$INSTALL_DIR/$BINARY_NAME"
 
-echo "Setting up PATH..."
-if ! grep -q "$INSTALL_DIR" /etc/environment; then
-    echo "PATH=\"\$PATH:$INSTALL_DIR\"" >> /etc/environment
-fi
-
 echo "Downloading systemd service file..."
 curl -L -o "/tmp/$SERVICE_NAME.service" "https://raw.githubusercontent.com/$REPO/main/scripts/app.service"
 
