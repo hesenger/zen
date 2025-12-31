@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"os"
@@ -67,19 +68,69 @@ func (m *mockFileSystemUpdater) OpenFile(name string, flag int, perm os.FileMode
 	return nil, errors.New("not implemented in mock")
 }
 
-type mockCommandExecutor struct {
-	executed []struct {
+type mockProcessManager struct {
+	processes map[string]*ProcessInfo
+	started   []struct {
+		appKey  string
+		version string
 		command string
 		workDir string
 	}
+	stopped []string
 }
 
-func (m *mockCommandExecutor) Run(command, workDir string) error {
-	m.executed = append(m.executed, struct {
+func newMockProcessManager() *mockProcessManager {
+	return &mockProcessManager{
+		processes: make(map[string]*ProcessInfo),
+		started:   make([]struct {
+			appKey  string
+			version string
+			command string
+			workDir string
+		}, 0),
+		stopped: make([]string, 0),
+	}
+}
+
+func (m *mockProcessManager) Start(appKey, version, command, workDir string) error {
+	m.started = append(m.started, struct {
+		appKey  string
+		version string
 		command string
 		workDir string
-	}{command, workDir})
+	}{appKey, version, command, workDir})
+	m.processes[appKey] = &ProcessInfo{
+		PID:         12345,
+		AppKey:      appKey,
+		Version:     version,
+		InstallPath: workDir,
+	}
 	return nil
+}
+
+func (m *mockProcessManager) Stop(appKey string) error {
+	m.stopped = append(m.stopped, appKey)
+	delete(m.processes, appKey)
+	return nil
+}
+
+func (m *mockProcessManager) IsRunning(appKey string) bool {
+	_, exists := m.processes[appKey]
+	return exists
+}
+
+func (m *mockProcessManager) StopAll() {
+	for appKey := range m.processes {
+		m.Stop(appKey)
+	}
+}
+
+func (m *mockProcessManager) GetProcess(appKey string) (*ProcessInfo, error) {
+	info, exists := m.processes[appKey]
+	if !exists {
+		return nil, fmt.Errorf("process not found")
+	}
+	return info, nil
 }
 
 type mockArchiveExtractor struct{}
@@ -135,9 +186,9 @@ func TestLoadSetupData(t *testing.T) {
 	updater := NewAppUpdater(
 		"/opt/zen/data/setup.json",
 		fs,
-		&mockCommandExecutor{},
 		&mockArchiveExtractor{},
 		&mockGitHubDownloader{},
+		newMockProcessManager(),
 	)
 
 	result, err := updater.loadSetupData()

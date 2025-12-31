@@ -204,26 +204,26 @@ func (gd *githubDownloader) DownloadAsset(url, token string) (io.ReadCloser, err
 }
 
 type AppUpdater struct {
-	setupFilePath string
-	fs            FileSystemOps
-	executor      CommandExecutor
-	extractor     ArchiveExtractor
-	downloader    GitHubDownloader
+	setupFilePath  string
+	fs             FileSystemOps
+	extractor      ArchiveExtractor
+	downloader     GitHubDownloader
+	ProcessManager ProcessManager
 }
 
 func NewAppUpdater(
 	setupFilePath string,
 	fs FileSystemOps,
-	executor CommandExecutor,
 	extractor ArchiveExtractor,
 	downloader GitHubDownloader,
+	processManager ProcessManager,
 ) *AppUpdater {
 	return &AppUpdater{
-		setupFilePath: setupFilePath,
-		fs:            fs,
-		executor:      executor,
-		extractor:     extractor,
-		downloader:    downloader,
+		setupFilePath:  setupFilePath,
+		fs:             fs,
+		extractor:      extractor,
+		downloader:     downloader,
+		ProcessManager: processManager,
 	}
 }
 
@@ -233,9 +233,9 @@ func NewDefaultAppUpdater(setupFilePath string) *AppUpdater {
 	return NewAppUpdater(
 		setupFilePath,
 		fs,
-		&shellExecutor{},
 		&archiveExtractorImpl{fs: fs},
 		&githubDownloader{client: httpClient},
+		NewProcessManager(),
 	)
 }
 
@@ -297,29 +297,44 @@ func (au *AppUpdater) updateApp(app App, githubToken string) error {
 	releaseID := sanitizeReleaseID(release.TagName)
 	installPath := filepath.Join("/opt/zen/apps", fmt.Sprintf("%s-%s", slug, releaseID))
 
-	if _, err := au.fs.Stat(installPath); err == nil {
-		log.Printf("App %s version %s already installed", app.Key, releaseID)
-		return nil
-	}
-
-	log.Printf("Installing app %s version %s", app.Key, releaseID)
-
-	if len(release.Assets) == 0 {
-		return fmt.Errorf("no assets found in release")
-	}
-
-	asset := release.Assets[0]
-	if err := au.downloadAndExtract(asset.BrowserDownloadURL, asset.Name, installPath, githubToken); err != nil {
-		return fmt.Errorf("failed to download and extract: %w", err)
-	}
-
-	if app.Command != "" {
-		if err := au.executor.Run(app.Command, installPath); err != nil {
-			log.Printf("Failed to run command for app %s: %v", app.Key, err)
+	existingProcess, _ := au.ProcessManager.GetProcess(app.Key)
+	if existingProcess != nil && existingProcess.Version == releaseID {
+		if au.ProcessManager.IsRunning(app.Key) {
+			log.Printf("App %s version %s already running", app.Key, releaseID)
+			return nil
 		}
 	}
 
-	log.Printf("Successfully installed app %s version %s", app.Key, releaseID)
+	if _, err := au.fs.Stat(installPath); err != nil {
+		log.Printf("Installing app %s version %s", app.Key, releaseID)
+
+		if len(release.Assets) == 0 {
+			return fmt.Errorf("no assets found in release")
+		}
+
+		asset := release.Assets[0]
+		if err := au.downloadAndExtract(asset.BrowserDownloadURL, asset.Name, installPath, githubToken); err != nil {
+			return fmt.Errorf("failed to download and extract: %w", err)
+		}
+
+		log.Printf("Successfully installed app %s version %s", app.Key, releaseID)
+	}
+
+	if app.Command != "" {
+		if existingProcess != nil && existingProcess.Version != releaseID {
+			log.Printf("Stopping old version of %s (version %s)", app.Key, existingProcess.Version)
+			if err := au.ProcessManager.Stop(app.Key); err != nil {
+				log.Printf("Failed to stop old version: %v", err)
+			}
+		}
+
+		log.Printf("Starting app %s version %s", app.Key, releaseID)
+		if err := au.ProcessManager.Start(app.Key, releaseID, app.Command, installPath); err != nil {
+			return fmt.Errorf("failed to start app: %w", err)
+		}
+		log.Printf("App %s version %s started successfully", app.Key, releaseID)
+	}
+
 	return nil
 }
 

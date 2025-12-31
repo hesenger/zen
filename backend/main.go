@@ -4,6 +4,9 @@ import (
 	"embed"
 	"log"
 	"net/http"
+	"os"
+	"os/signal"
+	"syscall"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/filesystem"
@@ -22,6 +25,16 @@ func main() {
 
 	appUpdater := NewDefaultAppUpdater("/opt/zen/data/setup.json")
 	go appUpdater.Start()
+
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
+
+	go func() {
+		<-sigChan
+		log.Println("Shutting down, stopping all managed apps...")
+		appUpdater.ProcessManager.StopAll()
+		os.Exit(0)
+	}()
 
 	app := fiber.New(fiber.Config{
 		AppName: "Zen",
