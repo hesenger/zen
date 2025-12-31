@@ -2,17 +2,10 @@ package main
 
 import (
 	"encoding/json"
-	"os"
 	"path/filepath"
 
 	"golang.org/x/crypto/bcrypt"
 )
-
-type FileSystem interface {
-	Stat(name string) (os.FileInfo, error)
-	WriteFile(name string, data []byte, perm os.FileMode) error
-	MkdirAll(path string, perm os.FileMode) error
-}
 
 type PasswordHasher interface {
 	Hash(password string) (string, error)
@@ -20,20 +13,6 @@ type PasswordHasher interface {
 
 type JWTValidator interface {
 	Validate(token string) (*Claims, error)
-}
-
-type osFileSystem struct{}
-
-func (fs *osFileSystem) Stat(name string) (os.FileInfo, error) {
-	return os.Stat(name)
-}
-
-func (fs *osFileSystem) WriteFile(name string, data []byte, perm os.FileMode) error {
-	return os.WriteFile(name, data, perm)
-}
-
-func (fs *osFileSystem) MkdirAll(path string, perm os.FileMode) error {
-	return os.MkdirAll(path, perm)
 }
 
 type bcryptHasher struct{}
@@ -53,13 +32,13 @@ func (v *jwtValidatorImpl) Validate(token string) (*Claims, error) {
 }
 
 type SetupService struct {
-	fs            FileSystem
+	fs            FileSystemOps
 	hasher        PasswordHasher
 	validator     JWTValidator
 	setupFilePath string
 }
 
-func NewSetupService(fs FileSystem, hasher PasswordHasher, validator JWTValidator, setupFilePath string) *SetupService {
+func NewSetupService(fs FileSystemOps, hasher PasswordHasher, validator JWTValidator, setupFilePath string) *SetupService {
 	return &SetupService{
 		fs:            fs,
 		hasher:        hasher,

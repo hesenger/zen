@@ -20,7 +20,7 @@ func main() {
 	}
 	jwtSecret = []byte(params.JWTSecret)
 
-	appUpdater := NewAppUpdater("/opt/zen/data/setup.json")
+	appUpdater := NewDefaultAppUpdater("/opt/zen/data/setup.json")
 	go appUpdater.Start()
 
 	app := fiber.New(fiber.Config{

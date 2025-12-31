@@ -25,14 +25,218 @@ type GitHubRelease struct {
 	} `json:"assets"`
 }
 
-type AppUpdater struct {
-	setupFilePath string
+type HTTPClient interface {
+	Do(req *http.Request) (*http.Response, error)
 }
 
-func NewAppUpdater(setupFilePath string) *AppUpdater {
+type CommandExecutor interface {
+	Run(command, workDir string) error
+}
+
+type ArchiveExtractor interface {
+	ExtractTarGz(archivePath, destPath string) error
+	ExtractZip(archivePath, destPath string) error
+}
+
+type GitHubDownloader interface {
+	GetLatestRelease(repo, token string) (*GitHubRelease, error)
+	DownloadAsset(url, token string) (io.ReadCloser, error)
+}
+
+type shellExecutor struct{}
+
+func (e *shellExecutor) Run(command, workDir string) error {
+	cmd := exec.Command("sh", "-c", command)
+	cmd.Dir = workDir
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	return cmd.Run()
+}
+
+type archiveExtractorImpl struct {
+	fs FileSystemOps
+}
+
+func (e *archiveExtractorImpl) ExtractTarGz(archivePath, destPath string) error {
+	file, err := e.fs.Open(archivePath)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	gzr, err := gzip.NewReader(file)
+	if err != nil {
+		return err
+	}
+	defer gzr.Close()
+
+	tr := tar.NewReader(gzr)
+	for {
+		header, err := tr.Next()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return err
+		}
+
+		target := filepath.Join(destPath, header.Name)
+
+		switch header.Typeflag {
+		case tar.TypeDir:
+			if err := e.fs.MkdirAll(target, 0755); err != nil {
+				return err
+			}
+		case tar.TypeReg:
+			if err := e.fs.MkdirAll(filepath.Dir(target), 0755); err != nil {
+				return err
+			}
+			outFile, err := e.fs.Create(target)
+			if err != nil {
+				return err
+			}
+			if _, err := io.Copy(outFile, tr); err != nil {
+				outFile.Close()
+				return err
+			}
+			outFile.Close()
+			if err := os.Chmod(target, os.FileMode(header.Mode)); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func (e *archiveExtractorImpl) ExtractZip(archivePath, destPath string) error {
+	r, err := zip.OpenReader(archivePath)
+	if err != nil {
+		return err
+	}
+	defer r.Close()
+
+	for _, f := range r.File {
+		fpath := filepath.Join(destPath, f.Name)
+
+		if f.FileInfo().IsDir() {
+			e.fs.MkdirAll(fpath, 0755)
+			continue
+		}
+
+		if err := e.fs.MkdirAll(filepath.Dir(fpath), 0755); err != nil {
+			return err
+		}
+
+		outFile, err := e.fs.OpenFile(fpath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, f.Mode())
+		if err != nil {
+			return err
+		}
+
+		rc, err := f.Open()
+		if err != nil {
+			outFile.Close()
+			return err
+		}
+
+		_, err = io.Copy(outFile, rc)
+		outFile.Close()
+		rc.Close()
+
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+type githubDownloader struct {
+	client HTTPClient
+}
+
+func (gd *githubDownloader) GetLatestRelease(repo, token string) (*GitHubRelease, error) {
+	url := fmt.Sprintf("https://api.github.com/repos/%s/releases/latest", repo)
+
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Accept", "application/vnd.github+json")
+
+	resp, err := gd.client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("GitHub API returned status %d", resp.StatusCode)
+	}
+
+	var release GitHubRelease
+	if err := json.NewDecoder(resp.Body).Decode(&release); err != nil {
+		return nil, err
+	}
+
+	return &release, nil
+}
+
+func (gd *githubDownloader) DownloadAsset(url, token string) (io.ReadCloser, error) {
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Set("Authorization", "Bearer "+token)
+
+	resp, err := gd.client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		resp.Body.Close()
+		return nil, fmt.Errorf("download failed with status %d", resp.StatusCode)
+	}
+
+	return resp.Body, nil
+}
+
+type AppUpdater struct {
+	setupFilePath string
+	fs            FileSystemOps
+	executor      CommandExecutor
+	extractor     ArchiveExtractor
+	downloader    GitHubDownloader
+}
+
+func NewAppUpdater(
+	setupFilePath string,
+	fs FileSystemOps,
+	executor CommandExecutor,
+	extractor ArchiveExtractor,
+	downloader GitHubDownloader,
+) *AppUpdater {
 	return &AppUpdater{
 		setupFilePath: setupFilePath,
+		fs:            fs,
+		executor:      executor,
+		extractor:     extractor,
+		downloader:    downloader,
 	}
+}
+
+func NewDefaultAppUpdater(setupFilePath string) *AppUpdater {
+	fs := &osFileSystem{}
+	httpClient := &http.Client{Timeout: 30 * time.Second}
+	return NewAppUpdater(
+		setupFilePath,
+		fs,
+		&shellExecutor{},
+		&archiveExtractorImpl{fs: fs},
+		&githubDownloader{client: httpClient},
+	)
 }
 
 func (au *AppUpdater) Start() {
@@ -66,7 +270,7 @@ func (au *AppUpdater) checkAndUpdateApps() {
 }
 
 func (au *AppUpdater) loadSetupData() (*SetupData, error) {
-	data, err := os.ReadFile(au.setupFilePath)
+	data, err := au.fs.ReadFile(au.setupFilePath)
 	if err != nil {
 		return nil, err
 	}
@@ -84,7 +288,7 @@ func (au *AppUpdater) updateApp(app App, githubToken string) error {
 		return fmt.Errorf("unsupported provider: %s", app.Provider)
 	}
 
-	release, err := au.getLatestRelease(app.Key, githubToken)
+	release, err := au.downloader.GetLatestRelease(app.Key, githubToken)
 	if err != nil {
 		return fmt.Errorf("failed to get latest release: %w", err)
 	}
@@ -93,7 +297,7 @@ func (au *AppUpdater) updateApp(app App, githubToken string) error {
 	releaseID := sanitizeReleaseID(release.TagName)
 	installPath := filepath.Join("/opt/zen/apps", fmt.Sprintf("%s-%s", slug, releaseID))
 
-	if _, err := os.Stat(installPath); err == nil {
+	if _, err := au.fs.Stat(installPath); err == nil {
 		log.Printf("App %s version %s already installed", app.Key, releaseID)
 		return nil
 	}
@@ -110,7 +314,7 @@ func (au *AppUpdater) updateApp(app App, githubToken string) error {
 	}
 
 	if app.Command != "" {
-		if err := au.runCommand(app.Command, installPath); err != nil {
+		if err := au.executor.Run(app.Command, installPath); err != nil {
 			log.Printf("Failed to run command for app %s: %v", app.Key, err)
 		}
 	}
@@ -119,67 +323,25 @@ func (au *AppUpdater) updateApp(app App, githubToken string) error {
 	return nil
 }
 
-func (au *AppUpdater) getLatestRelease(repo string, token string) (*GitHubRelease, error) {
-	url := fmt.Sprintf("https://api.github.com/repos/%s/releases/latest", repo)
-
-	req, err := http.NewRequest("GET", url, nil)
-	if err != nil {
-		return nil, err
-	}
-
-	req.Header.Set("Authorization", "Bearer "+token)
-	req.Header.Set("Accept", "application/vnd.github+json")
-
-	client := &http.Client{Timeout: 30 * time.Second}
-	resp, err := client.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("GitHub API returned status %d", resp.StatusCode)
-	}
-
-	var release GitHubRelease
-	if err := json.NewDecoder(resp.Body).Decode(&release); err != nil {
-		return nil, err
-	}
-
-	return &release, nil
-}
-
 func (au *AppUpdater) downloadAndExtract(url, filename, installPath, token string) error {
-	if err := os.MkdirAll(installPath, 0755); err != nil {
+	if err := au.fs.MkdirAll(installPath, 0755); err != nil {
 		return err
 	}
 
-	req, err := http.NewRequest("GET", url, nil)
+	body, err := au.downloader.DownloadAsset(url, token)
 	if err != nil {
 		return err
 	}
-
-	req.Header.Set("Authorization", "Bearer "+token)
-
-	client := &http.Client{Timeout: 10 * time.Minute}
-	resp, err := client.Do(req)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("download failed with status %d", resp.StatusCode)
-	}
+	defer body.Close()
 
 	tmpFile := filepath.Join(installPath, filename)
-	out, err := os.Create(tmpFile)
+	out, err := au.fs.Create(tmpFile)
 	if err != nil {
 		return err
 	}
 	defer out.Close()
 
-	if _, err := io.Copy(out, resp.Body); err != nil {
+	if _, err := io.Copy(out, body); err != nil {
 		return err
 	}
 	out.Close()
@@ -188,118 +350,17 @@ func (au *AppUpdater) downloadAndExtract(url, filename, installPath, token strin
 		return err
 	}
 
-	os.Remove(tmpFile)
+	au.fs.Remove(tmpFile)
 	return nil
 }
 
 func (au *AppUpdater) extractArchive(archivePath, destPath string) error {
 	if strings.HasSuffix(archivePath, ".tar.gz") || strings.HasSuffix(archivePath, ".tgz") {
-		return au.extractTarGz(archivePath, destPath)
+		return au.extractor.ExtractTarGz(archivePath, destPath)
 	} else if strings.HasSuffix(archivePath, ".zip") {
-		return au.extractZip(archivePath, destPath)
+		return au.extractor.ExtractZip(archivePath, destPath)
 	}
 	return fmt.Errorf("unsupported archive format: %s", archivePath)
-}
-
-func (au *AppUpdater) extractTarGz(archivePath, destPath string) error {
-	file, err := os.Open(archivePath)
-	if err != nil {
-		return err
-	}
-	defer file.Close()
-
-	gzr, err := gzip.NewReader(file)
-	if err != nil {
-		return err
-	}
-	defer gzr.Close()
-
-	tr := tar.NewReader(gzr)
-	for {
-		header, err := tr.Next()
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			return err
-		}
-
-		target := filepath.Join(destPath, header.Name)
-
-		switch header.Typeflag {
-		case tar.TypeDir:
-			if err := os.MkdirAll(target, 0755); err != nil {
-				return err
-			}
-		case tar.TypeReg:
-			if err := os.MkdirAll(filepath.Dir(target), 0755); err != nil {
-				return err
-			}
-			outFile, err := os.Create(target)
-			if err != nil {
-				return err
-			}
-			if _, err := io.Copy(outFile, tr); err != nil {
-				outFile.Close()
-				return err
-			}
-			outFile.Close()
-			if err := os.Chmod(target, os.FileMode(header.Mode)); err != nil {
-				return err
-			}
-		}
-	}
-	return nil
-}
-
-func (au *AppUpdater) extractZip(archivePath, destPath string) error {
-	r, err := zip.OpenReader(archivePath)
-	if err != nil {
-		return err
-	}
-	defer r.Close()
-
-	for _, f := range r.File {
-		fpath := filepath.Join(destPath, f.Name)
-
-		if f.FileInfo().IsDir() {
-			os.MkdirAll(fpath, 0755)
-			continue
-		}
-
-		if err := os.MkdirAll(filepath.Dir(fpath), 0755); err != nil {
-			return err
-		}
-
-		outFile, err := os.OpenFile(fpath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, f.Mode())
-		if err != nil {
-			return err
-		}
-
-		rc, err := f.Open()
-		if err != nil {
-			outFile.Close()
-			return err
-		}
-
-		_, err = io.Copy(outFile, rc)
-		outFile.Close()
-		rc.Close()
-
-		if err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func (au *AppUpdater) runCommand(command, workDir string) error {
-	cmd := exec.Command("sh", "-c", command)
-	cmd.Dir = workDir
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-
-	return cmd.Run()
 }
 
 func toSlug(s string) string {

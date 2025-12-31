@@ -6,31 +6,51 @@ import (
 	"testing"
 )
 
-type mockFileSystem struct {
+type mockFileSystemSetup struct {
 	statFunc      func(name string) (os.FileInfo, error)
 	writeFileFunc func(name string, data []byte, perm os.FileMode) error
 	mkdirAllFunc  func(path string, perm os.FileMode) error
 }
 
-func (m *mockFileSystem) Stat(name string) (os.FileInfo, error) {
+func (m *mockFileSystemSetup) Stat(name string) (os.FileInfo, error) {
 	if m.statFunc != nil {
 		return m.statFunc(name)
 	}
 	return nil, nil
 }
 
-func (m *mockFileSystem) WriteFile(name string, data []byte, perm os.FileMode) error {
+func (m *mockFileSystemSetup) WriteFile(name string, data []byte, perm os.FileMode) error {
 	if m.writeFileFunc != nil {
 		return m.writeFileFunc(name, data, perm)
 	}
 	return nil
 }
 
-func (m *mockFileSystem) MkdirAll(path string, perm os.FileMode) error {
+func (m *mockFileSystemSetup) MkdirAll(path string, perm os.FileMode) error {
 	if m.mkdirAllFunc != nil {
 		return m.mkdirAllFunc(path, perm)
 	}
 	return nil
+}
+
+func (m *mockFileSystemSetup) ReadFile(filename string) ([]byte, error) {
+	return nil, errors.New("not implemented")
+}
+
+func (m *mockFileSystemSetup) Create(name string) (*os.File, error) {
+	return nil, errors.New("not implemented")
+}
+
+func (m *mockFileSystemSetup) Open(name string) (*os.File, error) {
+	return nil, errors.New("not implemented")
+}
+
+func (m *mockFileSystemSetup) Remove(name string) error {
+	return errors.New("not implemented")
+}
+
+func (m *mockFileSystemSetup) OpenFile(name string, flag int, perm os.FileMode) (*os.File, error) {
+	return nil, errors.New("not implemented")
 }
 
 type mockPasswordHasher struct {
@@ -56,7 +76,7 @@ func (m *mockJWTValidator) Validate(token string) (*Claims, error) {
 }
 
 func TestCheckSetupStatus_PendingSetup(t *testing.T) {
-	mockFS := &mockFileSystem{
+	mockFS := &mockFileSystemSetup{
 		statFunc: func(name string) (os.FileInfo, error) {
 			return nil, os.ErrNotExist
 		},
@@ -75,7 +95,7 @@ func TestCheckSetupStatus_PendingSetup(t *testing.T) {
 }
 
 func TestCheckSetupStatus_Authenticated(t *testing.T) {
-	mockFS := &mockFileSystem{
+	mockFS := &mockFileSystemSetup{
 		statFunc: func(name string) (os.FileInfo, error) {
 			return nil, nil
 		},
@@ -103,7 +123,7 @@ func TestCheckSetupStatus_Authenticated(t *testing.T) {
 }
 
 func TestCheckSetupStatus_Ready(t *testing.T) {
-	mockFS := &mockFileSystem{
+	mockFS := &mockFileSystemSetup{
 		statFunc: func(name string) (os.FileInfo, error) {
 			return nil, nil
 		},
@@ -128,7 +148,7 @@ func TestCheckSetupStatus_Ready(t *testing.T) {
 }
 
 func TestCheckSetupStatus_ReadyNoToken(t *testing.T) {
-	mockFS := &mockFileSystem{
+	mockFS := &mockFileSystemSetup{
 		statFunc: func(name string) (os.FileInfo, error) {
 			return nil, nil
 		},
@@ -150,7 +170,7 @@ func TestPerformSetup_Success(t *testing.T) {
 	var writtenData []byte
 	var writtenPath string
 
-	mockFS := &mockFileSystem{
+	mockFS := &mockFileSystemSetup{
 		mkdirAllFunc: func(path string, perm os.FileMode) error {
 			if perm != 0755 {
 				t.Errorf("expected MkdirAll perm 0755, got %v", perm)
@@ -208,7 +228,7 @@ func TestPerformSetup_HashError(t *testing.T) {
 		},
 	}
 
-	service := NewSetupService(&mockFileSystem{}, mockHasher, &mockJWTValidator{}, "/test/setup.json")
+	service := NewSetupService(&mockFileSystemSetup{}, mockHasher, &mockJWTValidator{}, "/test/setup.json")
 
 	setupData := SetupData{
 		Username: "testuser",
@@ -226,7 +246,7 @@ func TestPerformSetup_HashError(t *testing.T) {
 }
 
 func TestPerformSetup_MkdirError(t *testing.T) {
-	mockFS := &mockFileSystem{
+	mockFS := &mockFileSystemSetup{
 		mkdirAllFunc: func(path string, perm os.FileMode) error {
 			return errors.New("mkdir failed")
 		},
@@ -250,7 +270,7 @@ func TestPerformSetup_MkdirError(t *testing.T) {
 }
 
 func TestPerformSetup_WriteFileError(t *testing.T) {
-	mockFS := &mockFileSystem{
+	mockFS := &mockFileSystemSetup{
 		writeFileFunc: func(name string, data []byte, perm os.FileMode) error {
 			return errors.New("write failed")
 		},
