@@ -48,7 +48,7 @@ jobs:
           TAG: ${{ github.ref_name }}
         run: |
           gh release create "$TAG" \
-            app \
+            backend/app \
             scripts/app.service \
             --repo=${{ github.repository }} \
             --title="Release $TAG" \
