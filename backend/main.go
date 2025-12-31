@@ -28,6 +28,18 @@ func main() {
 		})
 	})
 
+	api.Get("/check", func(c *fiber.Ctx) error {
+		setupFilePath := "/opt/zen/data/setup.json"
+		if _, err := os.Stat(setupFilePath); err == nil {
+			return c.JSON(fiber.Map{
+				"status": "ready",
+			})
+		}
+		return c.JSON(fiber.Map{
+			"status": "pending-setup",
+		})
+	})
+
 	httpFS := http.FS(distFS)
 	app.Use("/", filesystem.New(filesystem.Config{
 		Root:       httpFS,

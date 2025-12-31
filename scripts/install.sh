@@ -3,10 +3,13 @@ set -e
 
 REPO="hesenger/zen"
 BINARY_NAME="app"
-INSTALL_DIR="/usr/local/bin"
+INSTALL_DIR="/opt/zen"
 SERVICE_NAME="zen"
 
 echo "Installing Zen from GitHub releases..."
+
+echo "Creating installation directory..."
+mkdir -p "$INSTALL_DIR/data"
 
 LATEST_RELEASE=$(curl -s "https://api.github.com/repos/$REPO/releases/latest" | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/')
 
@@ -26,6 +29,11 @@ chmod +x "/tmp/$BINARY_NAME"
 
 echo "Installing to $INSTALL_DIR..."
 mv "/tmp/$BINARY_NAME" "$INSTALL_DIR/$BINARY_NAME"
+
+echo "Setting up PATH..."
+if ! grep -q "$INSTALL_DIR" /etc/environment; then
+    echo "PATH=\"\$PATH:$INSTALL_DIR\"" >> /etc/environment
+fi
 
 echo "Downloading systemd service file..."
 curl -L -o "/tmp/$SERVICE_NAME.service" "https://raw.githubusercontent.com/$REPO/main/scripts/app.service"
