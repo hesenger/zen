@@ -1,0 +1,12 @@
+version: '3.8'
+
+services:
+  zen:
+    build: .
+    ports:
+      - "8888:8888"
+    volumes:
+      - zen-data:/app
+
+volumes:
+  zen-data:
