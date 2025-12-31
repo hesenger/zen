@@ -20,7 +20,7 @@ type Claims struct {
 	jwt.RegisteredClaims
 }
 
-var jwtSecret = []byte(getEnvOrDefault("JWT_SECRET", "your-secret-key-change-in-production"))
+var jwtSecret []byte
 
 func generateJWT(username string) (string, error) {
 	claims := Claims{

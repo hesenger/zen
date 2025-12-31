@@ -4,7 +4,6 @@ import (
 	"embed"
 	"log"
 	"net/http"
-	"os"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/filesystem"
@@ -14,14 +13,13 @@ import (
 //go:embed frontend/dist
 var distFS embed.FS
 
-func getEnvOrDefault(key, defaultValue string) string {
-	if value := os.Getenv(key); value != "" {
-		return value
-	}
-	return defaultValue
-}
-
 func main() {
+	params, err := loadOrCreateParams()
+	if err != nil {
+		log.Fatal("Failed to load params:", err)
+	}
+	jwtSecret = []byte(params.JWTSecret)
+
 	app := fiber.New(fiber.Config{
 		AppName: "Zen",
 	})
@@ -42,13 +40,8 @@ func main() {
 		Browse:     false,
 	}))
 
-	port := os.Getenv("PORT")
-	if port == "" {
-		port = "8888"
-	}
-
-	log.Printf("Server starting on port %s", port)
-	if err := app.Listen(":" + port); err != nil {
+	log.Printf("Server starting on port 8888")
+	if err := app.Listen(":8888"); err != nil {
 		log.Fatal(err)
 	}
 }
