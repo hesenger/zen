@@ -1,9 +1,16 @@
 import { createContext, useContext, useState, type ReactNode } from "react";
 
+export interface App {
+  provider: string;
+  key: string;
+  command: string;
+}
+
 interface SetupData {
   username: string;
   password: string;
   githubToken: string;
+  apps: App[];
 }
 
 interface SetupContextType {
@@ -18,6 +25,7 @@ export function SetupProvider({ children }: { children: ReactNode }) {
     username: "",
     password: "",
     githubToken: "",
+    apps: [],
   });
 
   const updateSetupData = (data: Partial<SetupData>) => {
