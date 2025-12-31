@@ -1,4 +1,4 @@
-.PHONY: dev build-frontend build-backend prod clean
+.PHONY: dev build-frontend build-backend prod clean test
 
 dev:
 	@echo "Starting development servers..."
@@ -23,3 +23,7 @@ clean:
 	@rm -rf backend/app backend/frontend/dist
 	@mkdir -p backend/frontend/dist
 	@echo "This file is only kept so go builds work" > backend/frontend/dist/embedable-file.txt
+
+test:
+	@echo "Running Go tests..."
+	@cd backend && go test ./...
