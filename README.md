@@ -15,3 +15,9 @@ and configure your applications.
 
 Zen will monitor published releases for the applications, download and execute them
 automatically. You can use private repositories on Github through Token authentication.
+
+## Uninstallation
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/hesenger/zen/main/scripts/uninstall.sh | sudo bash
+```
