@@ -1,7 +1,15 @@
-import { Box, Stack, TextInput, PasswordInput, Button, Paper, Title, Container } from "@mantine/core";
+import { Stack, TextInput, PasswordInput, Button, Paper, Title, Container, Text } from "@mantine/core";
 import { useForm } from "@mantine/form";
+import { useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { useAuth } from "../../auth-context";
 
 export default function Login() {
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+  const navigate = useNavigate();
+  const { login } = useAuth();
+
   const form = useForm({
     initialValues: {
       username: "",
@@ -19,8 +27,18 @@ export default function Login() {
     },
   });
 
-  const handleSubmit = form.onSubmit((values) => {
-    console.log(values);
+  const handleSubmit = form.onSubmit(async (values) => {
+    setError("");
+    setLoading(true);
+
+    try {
+      await login(values.username, values.password);
+      navigate("/dashboard");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Login failed");
+    } finally {
+      setLoading(false);
+    }
   });
 
   return (
@@ -31,6 +49,11 @@ export default function Login() {
       <Paper withBorder shadow="md" p={30} radius="md">
         <form onSubmit={handleSubmit}>
           <Stack>
+            {error && (
+              <Text c="red" size="sm">
+                {error}
+              </Text>
+            )}
             <TextInput
               label="Username"
               placeholder="Enter username"
@@ -41,7 +64,7 @@ export default function Login() {
               placeholder="Enter password"
               {...form.getInputProps("password")}
             />
-            <Button type="submit" fullWidth mt="md">
+            <Button type="submit" fullWidth mt="md" loading={loading}>
               Login
             </Button>
           </Stack>

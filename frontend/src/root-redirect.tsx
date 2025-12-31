@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react'
 import { Navigate } from 'react-router-dom'
+import { useAuth } from './auth-context'
 
 export default function RootRedirect() {
-  const [status, setStatus] = useState<'loading' | 'ready' | 'pending-setup'>('loading')
+  const [status, setStatus] = useState<'loading' | 'ready' | 'authenticated' | 'pending-setup'>('loading')
+  const { loading } = useAuth()
 
   useEffect(() => {
     fetch('/api/check')
@@ -11,9 +13,17 @@ export default function RootRedirect() {
       .catch(() => setStatus('pending-setup'))
   }, [])
 
-  if (status === 'loading') {
+  if (status === 'loading' || loading) {
     return null
   }
 
-  return <Navigate to={status === 'ready' ? '/login' : '/setup'} replace />
+  if (status === 'pending-setup') {
+    return <Navigate to="/setup" replace />
+  }
+
+  if (status === 'authenticated') {
+    return <Navigate to="/dashboard" replace />
+  }
+
+  return <Navigate to="/login" replace />
 }
